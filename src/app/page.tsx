@@ -30,7 +30,7 @@ export default function Home() {
                 aria-label="name"
                 required
               />
-              <button className="button" type="submit">Save</button>
+              <button className="button" type="submit">Search</button>
             </div>
           </form>
           <div className="spacer" />

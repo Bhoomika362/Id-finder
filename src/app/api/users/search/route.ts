@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import openai from "@/lib/agent";
 import { getUsersCollection } from "@/lib/mongo";
 import { Document } from "mongodb";
+import { Agent, Runner } from "@openai/agents";
 
 export const runtime = "nodejs";
 
@@ -12,52 +12,76 @@ type SearchBody = {
   limit?: number;
 };
 
-async function runSearch(query: string, limit: number) {
-  const users = await getUsersCollection();
+// Simple Levenshtein distance to prevent overfitting
+function levenshtein(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[a.length][b.length];
+}
 
-  // Always pull top 200 users to let AI fuzzy match
-  const allUsers = (await users
+async function runAgentSearch(query: string, limit: number) {
+  const users = await getUsersCollection();
+  const docs = (await users
     .find({}, { projection: { _id: 1, name: 1 } })
     .limit(limit)
     .toArray()) as Document[];
 
-  const candidates = allUsers.map((u) => ({
-    id: u._id.toString(),
-    name: u.name as string,
+  const candidates = docs.map((d) => ({
+    id: d._id.toString(),
+    name: d.name as string,
   }));
 
   if (!candidates.length) return null;
 
-  const systemPrompt = `
-You are a fuzzy name matcher.
-Given a user query and a list of names, choose the one that is *closest in spelling or sound* (e.g., karban ≈ karbon).
-Return only JSON: {"id":"...","name":"..."}.
-`;
+  // Basic numeric filter before calling AI
+  const closestDistance = Math.min(
+    ...candidates.map((c) => levenshtein(query.toLowerCase(), c.name.toLowerCase()))
+  );
 
-  const userPrompt = `
-Query: ${query}
-Candidates:
-${candidates.map((c, i) => `${i + 1}. ${c.name} | id=${c.id}`).join("\n")}
-`;
+  // Skip AI if everything is too far (distance > 3)
+  if (closestDistance > 3) return null;
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+  const agent = new Agent({
+    model: "gpt-5-mini",
+    name: "User Fuzzy Search Agent",
+    instructions: `
+You are a strict fuzzy name matcher.
+- Find the user whose name *closely resembles* the given query by spelling or sound.
+- If the query is clearly unrelated (too different in letters or sound), return {"id": null, "name": null}.
+- Example: query="karban" → match "karbon".
+- Example: query="mansi" → return {"id": null, "name": null}.
+Return only strict JSON.`,
+    tools: [],
+  });
+
+  const runner = new Runner();
+  const result = await runner.run(agent, [
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: `Query: ${query}\nCandidates:\n${candidates
+            .map((c) => `${c.name} | id=${c.id}`)
+            .join("\n")}`,
+        },
       ],
-      response_format: { type: "json_object" },
-    });
+    },
+  ]);
 
-    const content = completion.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content);
-
-    if (parsed?.id && parsed?.name) {
-      return { id: String(parsed.id), name: String(parsed.name) };
-    }
-  } catch (err) {
-    console.error("OpenAI fallback failed:", err);
+  const output = result.finalOutput?.trim() || "";
+  try {
+    const parsed = JSON.parse(output);
+    if (parsed?.id && parsed?.name) return parsed;
+  } catch {
+    return null;
   }
 
   return null;
@@ -70,8 +94,7 @@ export async function POST(req: NextRequest) {
 
   if (!raw) return NextResponse.json({ error: "query is required" }, { status: 400 });
 
-  const query = raw.normalize("NFKC");
-  const match = await runSearch(query, limit);
+  const match = await runAgentSearch(raw, limit);
   if (!match) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json(match);
 }
@@ -90,8 +113,7 @@ export async function GET(req: NextRequest) {
 
   if (!raw) return NextResponse.json({ error: "query is required" }, { status: 400 });
 
-  const query = raw.normalize("NFKC");
-  const match = await runSearch(query, limit);
+  const match = await runAgentSearch(raw, limit);
   if (!match) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json(match);
 }
