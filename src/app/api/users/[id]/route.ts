@@ -1,12 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getUsersCollection, ObjectId } from "@/lib/mongo";
-
-type Params = { params: { id: string } };
 
 export const runtime = "nodejs";
 
-export async function GET(_: Request, { params }: Params) {
-  const id = params.id;
+export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   let objectId: ObjectId;
   try {
