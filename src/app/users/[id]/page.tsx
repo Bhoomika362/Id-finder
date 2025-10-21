@@ -1,4 +1,5 @@
 import { getUsersCollection, ObjectId } from "@/lib/mongo";
+import Link from "next/link";
 
 type PageProps = { params: { id: string } };
 
@@ -12,7 +13,7 @@ export default async function UserPage({ params }: PageProps) {
 
   const users = await getUsersCollection();
   const user = await users.findOne({ _id: objectId });
-  if (!user) return <div className="center"><div className="container"><div className="card"><div className="title">User not found</div><a className="link" href="/">Back</a></div></div></div>;
+  if (!user) return <div className="center"><div className="container"><div className="card"><div className="title">User not found</div><Link className="link" href="/">Back</Link></div></div></div>;
   return (
     <div className="center">
       <div className="container">
@@ -29,7 +30,7 @@ export default async function UserPage({ params }: PageProps) {
             <div>{user.name}</div>
           </div>
           <div className="spacer" />
-          <a className="link" href="/">← Back</a>
+          <Link className="link" href="/">← Back</Link>
         </div>
       </div>
     </div>

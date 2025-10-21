@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 type SearchParams = { searchParams: { name?: string } };
 
 async function fetchMatch(name: string) {
@@ -12,14 +14,14 @@ export default async function UsersResult({ searchParams }: SearchParams) {
   const name = (searchParams.name || "").trim();
   if (!name) {
     return (
-      <div className="center"><div className="container"><div className="card"><div className="title">Enter a name</div><a className="link" href="/">← Back</a></div></div></div>
+      <div className="center"><div className="container"><div className="card"><div className="title">Enter a name</div><Link className="link" href="/">← Back</Link></div></div></div>
     );
   }
 
   const match = await fetchMatch(name);
   if (!match) {
     return (
-      <div className="center"><div className="container"><div className="card"><div className="title">Oppsie User not present</div><div className="spacer" /><a className="link" href="/">← Back</a></div></div></div>
+      <div className="center"><div className="container"><div className="card"><div className="title">Oppsie User not present</div><div className="spacer" /><Link className="link" href="/">← Back</Link></div></div></div>
     );
   }
 
@@ -35,7 +37,7 @@ export default async function UsersResult({ searchParams }: SearchParams) {
           <div className="muted">name</div>
           <div>{match.name}</div>
           <div className="spacer" />
-          <a className="link" href="/">← Back</a>
+          <Link className="link" href="/">← Back</Link>
         </div>
       </div>
     </div>
